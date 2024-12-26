@@ -16,9 +16,12 @@ const options = {
   headers: {
     "User-Agent":
       "Mozilla/5.0 (Macintosh; Intel Mac OS X 10_15_7) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/131.0.0.0 Safari/537.36",
-      "Accept-Language": "ko,en-US;q=0.9,en;q=0.8,ko-KR;q=0.7"
+    "Accept-Language": "ko,en-US;q=0.9,en;q=0.8,ko-KR;q=0.7",
+    "Accept": "text/html,application/xhtml+xml,application/xml;q=0.9,image/avif,image/webp,image/apng,*/*;q=0.8,application/signed-exchange;v=b3;q=0.7"
   },
 };
+
+let firstResponseSaved = false; // 첫 번째 응답 저장 여부 확인 변수
 
 // 검색 및 데이터 추출 함수
 async function fetchData(searchText, index) {
@@ -29,15 +32,30 @@ async function fetchData(searchText, index) {
     console.log(`(${index + 1}) 검색 URL: ${url}`);
 
     // 웹페이지 요청
-    const { data: html } = await axios.get(url, options);
-    const $ = cheerio.load(html);
+    const response = await axios.get(url, options);
+    const html = response.data;
+    console.log(`HTTP 상태 코드: ${response.status}`);
+    if (response.status !== 200) {
+      console.log(`응답 데이터:\n${response.data || ""}`);
+      console.error(`(${index + 1}) 요청 실패: 상태 코드 ${response.status}`);
+      return;
+    }
+
+    // 첫 번째 HTML 응답 데이터를 저장
+    if (!firstResponseSaved) {
+      fs.writeFileSync("response.html", response.data, "utf8");
+      console.log("첫 번째 HTML 응답 데이터를 response.html 파일로 저장했습니다.");
+      firstResponseSaved = true; // 저장 완료 표시
+    }
+
+    const $ = cheerio.load(response.data);
 
     // 데이터 추출
     const hanja = $("strong.highlight").text() || "표제어 없음";
     const meaning = $(".mean").text().trim() || "훈음 없음";
 
     const radicalMatch = html.match(
-      /<div class="cate">부수<\/div>\s*<div class="desc">.*?<span.*?>(.*?)<\/span>\((.*?)\)/
+      /<div class="cate">부수<\/div>\s*<div class="desc".*?><span.*?><span.*?><span.*?>(.*?)<\/span><\/span><\/span>\((.*?)\)/
     );
     const radical = radicalMatch ? radicalMatch[1] : "부수 없음";
     const radicalMeaning = radicalMatch ? radicalMatch[2] : "부수 훈음 없음";
@@ -68,7 +86,7 @@ async function fetchData(searchText, index) {
 // CSV 파일 읽기 및 처리
 function processCSV() {
   const targets = [];
-  fs.createReadStream(INPUT_FILE, {encoding: 'utf8'})
+  fs.createReadStream(INPUT_FILE, { encoding: 'utf8' })
     .pipe(csvParser({
       skipLines: 0, // 첫 줄을 헤더로 사용
       trim: true, // 자동 공백 제거
