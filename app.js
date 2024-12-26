@@ -1,7 +1,6 @@
+const puppeteer = require("puppeteer"); 
 const fs = require("fs");
 const csvParser = require("csv-parser");
-const axios = require("axios");
-const cheerio = require("cheerio");
 const ExcelJS = require("exceljs"); // Import ExcelJS
 
 // 입력 파일과 출력 파일 경로
@@ -25,45 +24,65 @@ let firstResponseSaved = false; // 첫 번째 응답 저장 여부 확인 변수
 
 // 검색 및 데이터 추출 함수
 async function fetchData(searchText, index) {
-  try {
-    const url = `https://hanja.dict.naver.com/#/search?query=${encodeURIComponent(
-      searchText
-    )}`;
-    console.log(`(${index + 1}) 검색 URL: ${url}`);
+  const url = `https://hanja.dict.naver.com/#/search?query=${encodeURIComponent(
+    searchText
+  )}`;
+  console.log(`(${index + 1}) 검색 URL: ${url}`);
 
-    // 웹페이지 요청
-    const response = await axios.get(url, options);
-    const html = response.data;
-    console.log(`HTTP 상태 코드: ${response.status}`);
-    if (response.status !== 200) {
-      console.log(`응답 데이터:\n${response.data || ""}`);
-      console.error(`(${index + 1}) 요청 실패: 상태 코드 ${response.status}`);
-      return;
-    }
+  let browser;
+  try {
+    // 브라우저 열기
+    browser = await puppeteer.launch();
+    const page = await browser.newPage();
+
+    // 페이지 이동
+    await page.goto(url, { waitUntil: "networkidle2" });
 
     // 첫 번째 HTML 응답 데이터를 저장
     if (!firstResponseSaved) {
-      fs.writeFileSync("response.html", response.data, "utf8");
+      const html = await page.content();
+      fs.writeFileSync("response.html", html, "utf8");
       console.log("첫 번째 HTML 응답 데이터를 response.html 파일로 저장했습니다.");
       firstResponseSaved = true; // 저장 완료 표시
     }
 
-    const $ = cheerio.load(response.data);
-
     // 데이터 추출
-    const hanja = $("strong.highlight").text() || "표제어 없음";
-    const meaning = $(".mean").text().trim() || "훈음 없음";
+    const hanja = await page.$eval(
+      "strong.highlight",
+      (el) => el.textContent.trim() || "표제어 없음"
+    ).catch(() => "표제어 없음");
 
-    const radicalMatch = html.match(
-      /<div class="cate">부수<\/div>\s*<div class="desc".*?><span.*?><span.*?><span.*?>(.*?)<\/span><\/span><\/span>\((.*?)\)/
-    );
-    const radical = radicalMatch ? radicalMatch[1] : "부수 없음";
-    const radicalMeaning = radicalMatch ? radicalMatch[2] : "부수 훈음 없음";
+    const meaning = await page.$eval(
+      ".mean",
+      (el) => el.textContent.trim() || "훈음 없음"
+    ).catch(() => "훈음 없음");
 
-    const strokeMatch = html.match(
-      /<div class="cate">총 획수<\/div>\s*<div class="desc">(.*?)획<\/div>/
-    );
-    const strokeCount = strokeMatch ? `${strokeMatch[1]}획` : "획수 없음";
+    const radicalData = await page
+      .evaluate(() => {
+        const radicalElem = document.querySelector(
+          'div.cate:contains("부수") + div.desc span span span'
+        );
+        const radicalMeaningElem = radicalElem?.parentElement?.textContent.match(
+          /\((.*?)\)/
+        );
+        return {
+          radical: radicalElem?.textContent || "부수 없음",
+          radicalMeaning: radicalMeaningElem ? radicalMeaningElem[1] : "부수 훈음 없음",
+        };
+      })
+      .catch(() => ({
+        radical: "부수 없음",
+        radicalMeaning: "부수 훈음 없음",
+      }));
+
+    const strokeCount = await page
+      .evaluate(() => {
+        const strokeElem = document.querySelector(
+          'div.cate:contains("총 획수") + div.desc'
+        );
+        return strokeElem?.textContent.trim() || "획수 없음";
+      })
+      .catch(() => "획수 없음");
 
     // 결과 저장
     results.push({
@@ -71,15 +90,19 @@ async function fetchData(searchText, index) {
       Hanja: hanja,
       Meaning: meaning,
       StrokeCount: strokeCount,
-      Radical: radical,
-      RadicalMeaning: radicalMeaning,
+      Radical: radicalData.radical,
+      RadicalMeaning: radicalData.radicalMeaning,
     });
 
     console.log(
-      `결과: 표제어=${hanja}, 훈음=${meaning}, 획수=${strokeCount}, 부수=${radical}, 부수 훈음=${radicalMeaning}`
+      `결과: 표제어=${hanja}, 훈음=${meaning}, 획수=${strokeCount}, 부수=${radicalData.radical}, 부수 훈음=${radicalData.radicalMeaning}`
     );
   } catch (error) {
     console.error(`(${index + 1}) 검색 실패: ${searchText} - ${error.message}`);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
 }
 
