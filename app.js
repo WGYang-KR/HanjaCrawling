@@ -67,18 +67,26 @@ async function fetchData(searchText, index) {
 
 // CSV 파일 읽기 및 처리
 function processCSV() {
+  const targets = [];
   fs.createReadStream(INPUT_FILE, {encoding: 'utf8'})
-    .pipe(csvParser())
+    .pipe(csvParser({
+      skipLines: 0, // 첫 줄을 헤더로 사용
+      trim: true, // 자동 공백 제거
+    }))
     .on("data", (row) => {
-      if (row.SEARCH_TEXT) {
-        results.push(row.SEARCH_TEXT);
+      if (row.SEARCH_TEXT && typeof row.SEARCH_TEXT === "string") {
+        targets.push(row.SEARCH_TEXT);
       }
     })
     .on("end", async () => {
       console.log("CSV 파일 읽기 완료. 검색 시작...");
 
-      for (const [index, searchText] of results.entries()) {
-        await fetchData(searchText, index);
+      for (const [index, searchText] of targets.entries()) {
+        if (typeof searchText === "string" && searchText.length > 0) {
+          await fetchData(searchText, index); // 올바른 문자열만 전달
+        } else {
+          console.warn(`올바르지 않은 검색어: ${searchText} (index: ${index})`);
+        }
       }
 
       // 엑셀 파일 생성 (ExcelJS 사용)
