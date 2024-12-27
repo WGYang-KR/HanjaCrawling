@@ -1,4 +1,4 @@
-const puppeteer = require("puppeteer"); 
+const puppeteer = require("puppeteer");
 const fs = require("fs");
 const csvParser = require("csv-parser");
 const ExcelJS = require("exceljs"); // Import ExcelJS
@@ -47,28 +47,48 @@ async function fetchData(searchText, index) {
     }
 
     // 데이터 추출
-    const hanja = await page.$eval(
-      "strong.highlight",
-      (el) => el.textContent.trim() || "표제어 없음"
-    ).catch(() => "표제어 없음");
 
-    const meaning = await page.$eval(
-      ".mean",
-      (el) => el.textContent.trim() || "훈음 없음"
-    ).catch(() => "훈음 없음");
+    const hanja = await page
+      .evaluate(() => {
+        try {
+          const element = document.querySelector('div.hanja_word strong');
+          return element?.textContent.trim() || "표제어 없음";
+        } catch {
+          return "표제어 없음";
+        }
+      })
+      .catch(() => "표제어 없음");
+
+    const meaning = await page
+      .evaluate(() => {
+        try {
+          const element = document.querySelector('div.hanja_word div.mean');
+          return element?.textContent.trim() || "훈음 없음";
+        } catch {
+          return "훈음 없음";
+        }
+      })
+      .catch(() => "훈음 없음");
+
 
     const radicalData = await page
       .evaluate(() => {
-        const radicalElem = document.querySelector(
-          'div.cate:contains("부수") + div.desc span span span'
-        );
-        const radicalMeaningElem = radicalElem?.parentElement?.textContent.match(
-          /\((.*?)\)/
-        );
-        return {
-          radical: radicalElem?.textContent || "부수 없음",
-          radicalMeaning: radicalMeaningElem ? radicalMeaningElem[1] : "부수 훈음 없음",
-        };
+        // "부수"라는 텍스트를 가진 div.cate 요소를 찾기
+        const cateElem = Array.from(document.querySelectorAll('div.cate'))
+          .find(elem => elem.textContent.trim() === '부수');
+
+        // cateElem의 형제 요소 중 div.desc 찾기
+        const descElem = cateElem?.nextElementSibling;
+
+        // 부수 (radical) 값 찾기
+        const radicalElem = descElem?.querySelector('span span span');
+        const radical = radicalElem?.textContent.trim() || "부수 없음";
+
+        // 괄호 안의 부수 훈음 (radicalMeaning) 찾기
+        const meaningMatch = descElem?.textContent.match(/\((.*?)\)/);
+        const radicalMeaning = meaningMatch ? meaningMatch[1].trim() : "부수 훈음 없음";
+
+        return { radical, radicalMeaning };
       })
       .catch(() => ({
         radical: "부수 없음",
@@ -77,33 +97,37 @@ async function fetchData(searchText, index) {
 
     const strokeCount = await page
       .evaluate(() => {
-        const strokeElem = document.querySelector(
-          'div.cate:contains("총 획수") + div.desc'
-        );
-        return strokeElem?.textContent.trim() || "획수 없음";
-      })
-      .catch(() => "획수 없음");
+        const elemet = Array.from(document.querySelectorAll('div.cate'))
+          .find(elem => elem.textContent.trim() === '총 획수');
 
-    // 결과 저장
-    results.push({
-      SEARCH_TEXT: searchText,
-      Hanja: hanja,
-      Meaning: meaning,
-      StrokeCount: strokeCount,
-      Radical: radicalData.radical,
-      RadicalMeaning: radicalData.radicalMeaning,
-    });
+        // cateElem의 형제 요소 중 div.desc 찾기
+        const descElem = cateElem?.nextElementSibling;
 
-    console.log(
-      `결과: 표제어=${hanja}, 훈음=${meaning}, 획수=${strokeCount}, 부수=${radicalData.radical}, 부수 훈음=${radicalData.radicalMeaning}`
-    );
-  } catch (error) {
-    console.error(`(${index + 1}) 검색 실패: ${searchText} - ${error.message}`);
-  } finally {
-    if (browser) {
-      await browser.close();
-    }
+  });
+    return descElem?.textContent.trim() || "획수 없음";
+  })
+      .catch (() => "획수 없음");
+
+  // 결과 저장
+  results.push({
+    SEARCH_TEXT: searchText,
+    Hanja: hanja,
+    Meaning: meaning,
+    StrokeCount: strokeCount,
+    Radical: radicalData.radical,
+    RadicalMeaning: radicalData.radicalMeaning,
+  });
+
+  console.log(
+    `결과: 표제어=${hanja}, 훈음=${meaning}, 획수=${strokeCount}, 부수=${radicalData.radical}, 부수 훈음=${radicalData.radicalMeaning}`
+  );
+} catch (error) {
+  console.error(`(${index + 1}) 검색 실패: ${searchText} - ${error.message}`);
+} finally {
+  if (browser) {
+    await browser.close();
   }
+}
 }
 
 // CSV 파일 읽기 및 처리
