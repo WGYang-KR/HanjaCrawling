@@ -166,9 +166,9 @@ function processCSV() {
         { header: "SEARCH_TEXT", key: "SEARCH_TEXT", width: 20 },
         { header: "Hanja", key: "Hanja", width: 20 },
         { header: "Meaning", key: "Meaning", width: 30 },
-        { header: "StrokeCount", key: "StrokeCount", width: 20 },
         { header: "Radical", key: "Radical", width: 20 },
         { header: "RadicalMeaning", key: "RadicalMeaning", width: 30 },
+        { header: "StrokeCount", key: "StrokeCount", width: 20 },
       ];
 
       // 데이터 추가
