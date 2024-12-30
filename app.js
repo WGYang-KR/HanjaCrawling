@@ -2,13 +2,15 @@ const puppeteer = require("puppeteer");
 const fs = require("fs");
 const csvParser = require("csv-parser");
 const ExcelJS = require("exceljs"); // Import ExcelJS
+const path = require("path");
 
-// 입력 파일과 출력 파일 경로
-const INPUT_FILE = "input.csv";
-const OUTPUT_FILE = "output.xlsx";
+// 입력 파일과 출력 폴더
+const INPUT_FOLDER = "./input"; // CSV 파일들이 있는 폴더
+const OUTPUT_FOLDER = "./output"; // 결과 Excel 파일 저장 폴더
 
-// 결과 저장용 배열
-const results = [];
+if (!fs.existsSync(OUTPUT_FOLDER)) {
+  fs.mkdirSync(OUTPUT_FOLDER); // 출력 폴더가 없으면 생성
+}
 
 // HTTP 요청 옵션
 const options = {
@@ -23,7 +25,7 @@ const options = {
 let firstResponseSaved = false; // 첫 번째 응답 저장 여부 확인 변수
 
 // 검색 및 데이터 추출 함수
-async function fetchData(searchText, index) {
+async function fetchData(searchText, index, results) {
   const url = `https://hanja.dict.naver.com/#/search?query=${encodeURIComponent(
     searchText
   )}`;
@@ -107,7 +109,7 @@ async function fetchData(searchText, index) {
         // '획' 이후 문자열 제거
         const cutoffIndex = count.indexOf('획');
         return cutoffIndex !== -1 ? count.substring(0, cutoffIndex).trim() : "";
-        
+
       })
       .catch(() => "");
 
@@ -134,9 +136,10 @@ async function fetchData(searchText, index) {
 }
 
 // CSV 파일 읽기 및 처리
-function processCSV() {
+async function processCSV(filePath, outputFilePath) {
   const targets = [];
-  fs.createReadStream(INPUT_FILE, { encoding: 'utf8' })
+
+  fs.createReadStream(filePath, { encoding: "utf8" })
     .pipe(csvParser({
       skipLines: 0, // 첫 줄을 헤더로 사용
       trim: true, // 자동 공백 제거
@@ -149,9 +152,11 @@ function processCSV() {
     .on("end", async () => {
       console.log("CSV 파일 읽기 완료. 검색 시작...");
 
+      const results = []; // 결과 데이터를 저장할 배열
+
       for (const [index, searchText] of targets.entries()) {
         if (typeof searchText === "string" && searchText.length > 0) {
-          await fetchData(searchText, index); // 올바른 문자열만 전달
+          await fetchData(searchText, index, results); // 올바른 문자열만 전달
         } else {
           console.warn(`올바르지 않은 검색어: ${searchText} (index: ${index})`);
         }
@@ -177,14 +182,38 @@ function processCSV() {
       });
 
       // 파일 저장
-      await workbook.xlsx.writeFile(OUTPUT_FILE);
+      await workbook.xlsx.writeFile(outputFilePath);
 
-      console.log(`검색 완료! 결과는 ${OUTPUT_FILE}에 저장되었습니다.`);
+      console.log(`검색 완료! 결과는 ${outputFilePath}에 저장되었습니다.`);
     })
     .on("error", (error) => {
       console.error("CSV 파일 읽기 중 오류 발생:", error.message);
     });
 }
 
+async function processAllFiles() {
+  const files = fs.readdirSync(INPUT_FOLDER).filter((file) => file.endsWith(".csv"));
+
+  if (files.length === 0) {
+    console.error("입력 폴더에 CSV 파일이 없습니다.");
+    return;
+  }
+
+  for (const file of files) {
+    // 파일 경로 생성
+    const inputFile = path.join(INPUT_FOLDER, file); // 절대 경로 생성
+    const outputFile = path.join(OUTPUT_FOLDER, file.replace(".csv", ".xlsx"));
+
+    try {
+      console.log(`처리 중: ${inputFile}`);
+      await processCSV(inputFile, outputFile);
+    } catch (error) {
+      console.error(`파일 처리 중 오류 발생 (${file}):`, error.message);
+    }
+  }
+
+  console.log("모든 파일 처리가 완료되었습니다!");
+}
+
 // 실행
-processCSV();
+processAllFiles();
