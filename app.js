@@ -63,12 +63,12 @@ async function fetchData(searchText, index) {
       .evaluate(() => {
         try {
           const element = document.querySelector('div.hanja_word div.mean');
-          return element?.textContent.trim() || "훈음 없음";
+          return element?.textContent.trim() || "";
         } catch {
-          return "훈음 없음";
+          return "";
         }
       })
-      .catch(() => "훈음 없음");
+      .catch(() => "");
 
 
     const radicalData = await page
@@ -81,8 +81,8 @@ async function fetchData(searchText, index) {
         const descElem = cateElem?.nextElementSibling;
 
         // 부수 (radical) 값 찾기
-        const radicalElem = descElem?.querySelector('span span span');
-        const radical = radicalElem?.textContent.trim() || "부수 없음";
+        const radicalElem = descElem?.querySelector('span');
+        const radical = radicalElem?.textContent.trim() || "";
 
         // 괄호 안의 부수 훈음 (radicalMeaning) 찾기
         const meaningMatch = descElem?.textContent.match(/\((.*?)\)/);
@@ -91,43 +91,46 @@ async function fetchData(searchText, index) {
         return { radical, radicalMeaning };
       })
       .catch(() => ({
-        radical: "부수 없음",
-        radicalMeaning: "부수 훈음 없음",
+        radical: "",
+        radicalMeaning: "",
       }));
 
     const strokeCount = await page
       .evaluate(() => {
-        const elemet = Array.from(document.querySelectorAll('div.cate'))
+        const cateElem = Array.from(document.querySelectorAll('div.cate'))
           .find(elem => elem.textContent.trim() === '총 획수');
 
         // cateElem의 형제 요소 중 div.desc 찾기
         const descElem = cateElem?.nextElementSibling;
+        const count = descElem.textContent.trim() || "";
 
-  });
-    return descElem?.textContent.trim() || "획수 없음";
-  })
-      .catch (() => "획수 없음");
+        // '획' 이후 문자열 제거
+        const cutoffIndex = count.indexOf('획');
+        return cutoffIndex !== -1 ? count.substring(0, cutoffIndex).trim() : "";
+        
+      })
+      .catch(() => "");
 
-  // 결과 저장
-  results.push({
-    SEARCH_TEXT: searchText,
-    Hanja: hanja,
-    Meaning: meaning,
-    StrokeCount: strokeCount,
-    Radical: radicalData.radical,
-    RadicalMeaning: radicalData.radicalMeaning,
-  });
+    // 결과 저장
+    results.push({
+      SEARCH_TEXT: searchText,
+      Hanja: hanja,
+      Meaning: meaning,
+      Radical: radicalData.radical,
+      RadicalMeaning: radicalData.radicalMeaning,
+      StrokeCount: strokeCount,
+    });
 
-  console.log(
-    `결과: 표제어=${hanja}, 훈음=${meaning}, 획수=${strokeCount}, 부수=${radicalData.radical}, 부수 훈음=${radicalData.radicalMeaning}`
-  );
-} catch (error) {
-  console.error(`(${index + 1}) 검색 실패: ${searchText} - ${error.message}`);
-} finally {
-  if (browser) {
-    await browser.close();
+    console.log(
+      `결과: 표제어= ${hanja}, 훈음= ${meaning}, 부수= ${radicalData.radical}, 부수훈음= ${radicalData.radicalMeaning}, 획수= ${strokeCount}`
+    );
+  } catch (error) {
+    console.error(`(${index + 1}) 검색 실패: ${searchText} - ${error.message}`);
+  } finally {
+    if (browser) {
+      await browser.close();
+    }
   }
-}
 }
 
 // CSV 파일 읽기 및 처리
