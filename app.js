@@ -139,56 +139,62 @@ async function fetchData(searchText, index, results) {
 async function processCSV(filePath, outputFilePath) {
   const targets = [];
 
-  fs.createReadStream(filePath, { encoding: "utf8" })
-    .pipe(csvParser({
-      skipLines: 0, // 첫 줄을 헤더로 사용
-      trim: true, // 자동 공백 제거
-    }))
-    .on("data", (row) => {
-      if (row.SEARCH_TEXT && typeof row.SEARCH_TEXT === "string") {
-        targets.push(row.SEARCH_TEXT);
-      }
-    })
-    .on("end", async () => {
-      console.log("CSV 파일 읽기 완료. 검색 시작...");
-
-      const results = []; // 결과 데이터를 저장할 배열
-
-      for (const [index, searchText] of targets.entries()) {
-        if (typeof searchText === "string" && searchText.length > 0) {
-          await fetchData(searchText, index, results); // 올바른 문자열만 전달
-        } else {
-          console.warn(`올바르지 않은 검색어: ${searchText} (index: ${index})`);
+  // 스트림 처리와 결과 저장을 명시적으로 비동기 처리
+  await new Promise((resolve, reject) => {
+    fs.createReadStream(filePath, { encoding: "utf8" })
+      .pipe(csvParser({
+        skipLines: 0, // 첫 줄을 헤더로 사용
+        trim: true, // 자동 공백 제거
+      }))
+      .on("data", (row) => {
+        if (row.SEARCH_TEXT && typeof row.SEARCH_TEXT === "string") {
+          targets.push(row.SEARCH_TEXT);
         }
-      }
+      })
+      .on("end", async () => {
+        console.log("CSV 파일 읽기 완료. 검색 시작...");
 
-      // 엑셀 파일 생성 (ExcelJS 사용)
-      const workbook = new ExcelJS.Workbook();
-      const worksheet = workbook.addWorksheet("Sheet1");
+        const results = []; // 결과 데이터를 저장할 배열
 
-      // 헤더 추가
-      worksheet.columns = [
-        { header: "SEARCH_TEXT", key: "SEARCH_TEXT", width: 20 },
-        { header: "Hanja", key: "Hanja", width: 20 },
-        { header: "Meaning", key: "Meaning", width: 30 },
-        { header: "Radical", key: "Radical", width: 20 },
-        { header: "RadicalMeaning", key: "RadicalMeaning", width: 30 },
-        { header: "StrokeCount", key: "StrokeCount", width: 20 },
-      ];
+        for (const [index, searchText] of targets.entries()) {
+          if (typeof searchText === "string" && searchText.length > 0) {
+            await fetchData(searchText, index, results); // 올바른 문자열만 전달
+          } else {
+            console.warn(`올바르지 않은 검색어: ${searchText} (index: ${index})`);
+            reject();
+          }
+        }
 
-      // 데이터 추가
-      results.forEach((result) => {
-        worksheet.addRow(result);
+        // 엑셀 파일 생성 (ExcelJS 사용)
+        const workbook = new ExcelJS.Workbook();
+        const worksheet = workbook.addWorksheet("Sheet1");
+
+        // 헤더 추가
+        worksheet.columns = [
+          { header: "SEARCH_TEXT", key: "SEARCH_TEXT", width: 20 },
+          { header: "Hanja", key: "Hanja", width: 20 },
+          { header: "Meaning", key: "Meaning", width: 30 },
+          { header: "Radical", key: "Radical", width: 20 },
+          { header: "RadicalMeaning", key: "RadicalMeaning", width: 30 },
+          { header: "StrokeCount", key: "StrokeCount", width: 20 },
+        ];
+
+        // 데이터 추가
+        results.forEach((result) => {
+          worksheet.addRow(result);
+        });
+
+        // 파일 저장
+        await workbook.xlsx.writeFile(outputFilePath);
+
+        console.log(`검색 완료! 결과는 ${outputFilePath}에 저장되었습니다.`);
+        resolve();
+      })
+      .on("error", (error) => {
+        console.error("CSV 파일 읽기 중 오류 발생:", error.message);
+        reject();
       });
-
-      // 파일 저장
-      await workbook.xlsx.writeFile(outputFilePath);
-
-      console.log(`검색 완료! 결과는 ${outputFilePath}에 저장되었습니다.`);
-    })
-    .on("error", (error) => {
-      console.error("CSV 파일 읽기 중 오류 발생:", error.message);
-    });
+  })
 }
 
 async function processAllFiles() {
